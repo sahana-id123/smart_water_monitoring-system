@@ -1,0 +1,99 @@
+#include <SoftwareSerial.h>
+
+// HC-SR04 Sensor pins
+const int trigPin = 9;
+const int echoPin = 10;
+
+// Wi-Fi module (ESP8266) pins
+SoftwareSerial esp8266(2, 3); // RX, TX
+
+// Wi-Fi and ThingSpeak settings
+const char* ssid = "your_ssid";
+const char* password = "your_password";
+const char* apiKey = "your_thingspeak_api_key";
+const char* server = "api.thingspeak.com";
+
+long duration;
+int distance;
+
+void setup() {
+  Serial.begin(115200);
+  esp8266.begin(115200);
+
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+
+  connectToWiFi();
+}
+
+void loop() {
+  distance = getDistance();
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println(" cm");
+
+  if (distance < 100) { // Threshold distance for your use case
+    sendData(distance);
+  }
+
+  delay(20000); // Send data every 20 seconds
+}
+
+int getDistance() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2; // Convert to cm
+
+  return distance;
+}
+
+void connectToWiFi() {
+  Serial.println("Connecting to WiFi");
+  esp8266.println("AT+CWMODE=1");
+  delay(2000);
+  String cmd = "AT+CWJAP=\"" + String(ssid) + "\",\"" + String(password) + "\"";
+  esp8266.println(cmd);
+  delay(5000);
+
+  if (esp8266.find("OK")) {
+    Serial.println("Connected to WiFi");
+  } else {
+    Serial.println("Failed to connect to WiFi");
+  }
+}
+
+void sendData(int distance) {
+  String cmd = "AT+CIPSTART=\"TCP\",\"";
+  cmd += server;
+  cmd += "\",80";
+  esp8266.println(cmd);
+  delay(2000);
+
+  if (esp8266.find("OK")) {
+    Serial.println("Connected to server");
+    String getStr = "GET /update?api_key=";
+    getStr += apiKey;
+    getStr += "&field1=";
+    getStr += String(distance);
+    getStr += "\r\n\r\n";
+
+    cmd = "AT+CIPSEND=";
+    cmd += String(getStr.length());
+    esp8266.println(cmd);
+    delay(2000);
+
+    if (esp8266.find(">")) {
+      esp8266.print(getStr);
+      Serial.println("Data sent to ThingSpeak");
+    }
+    delay(2000);
+    esp8266.println("AT+CIPCLOSE");
+  } else {
+    Serial.println("Failed to connect to server");
+  }
+}
